@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 
-
 function command_internal_list {
 	MIGRATIONS_DIR="$HOME/migrations"
 	find "$MIGRATIONS_DIR" -type f -regex '.*\.sql' | sort
 }
 
 MIGRATION_LAST="$HOME/.migration"
-MIGRATION_LAST_NUM=$(cat "$MIGRATION_LAST" || echo "-1")
+MIGRATION_LAST_NUM=$(cat "$MIGRATION_LAST" 2>/dev/null || echo "-1")
 
 function command_internal_apply {
 	for MIGRATION_PATH in $(command_internal_list); do
@@ -26,7 +25,7 @@ function command_internal_apply {
 
 function command_internal_current {
 	if [[ "$MIGRATION_LAST_NUM" == "-1" ]]; then
-		echo "null"
+		echo "-1" | tee "$MIGRATION_LAST"
 		return
 	fi
 

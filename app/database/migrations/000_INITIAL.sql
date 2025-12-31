@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   id       SERIAL PRIMARY KEY,
 
   name     TEXT NOT NULL,
-  image    TEXT
+  image    TEXT DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -10,9 +10,9 @@ CREATE TABLE IF NOT EXISTS users (
   password            VARCHAR(32) NOT NULL,
 
   created_at          TIMESTAMP DEFAULT now() NOT NULL,
-  banned_until        TIMESTAMP,
+  banned_until        TIMESTAMP DEFAULT NULL,
 
-  profile_id          INTEGER,
+  profile_id          INTEGER DEFAULT NULL,
   CONSTRAINT profile  FOREIGN KEY (profile_id) REFERENCES profiles
 );
 
@@ -22,24 +22,140 @@ CREATE TABLE IF NOT EXISTS sessions (
   expiry           TIMESTAMP NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS team (
-  id              SERIAL PRIMARY KEY,
+-- NOTE: team_members_{max,min} if are equal means a specific amount of members on the team
+CREATE TABLE IF NOT EXISTS ctfs (
+  id                SERIAL PRIMARY KEY,
 
-  member_names    VARCHAR(64) ARRAY,
-  CONSTRAINT members FOREIGN KEY (member_names) REFERENCES members,
+  team_members_min  INTEGER DEFAULT 1 NOT NULL,
+  team_members_max  INTEGER NULL,
 
-  profile_id      INTEGER,
-  CONSTRAINT profile FOREIGN KEY (profile_id) REFERENCES profiles
+  CONSTRAINT constraint_members_min_gt_zero  CHECK (team_members_min > 0),
+  CONSTRAINT constraint_members_min_lteq_max CHECK (team_members_min <= team_members_max)
+);
+CREATE TABLE IF NOT EXISTS ctf_organizers (
+  ctf_id        INTEGER NOT NULL,
+  organizer_id  VARCHAR(64) NOT NULL,
+
+  CONSTRAINT constraint_ctf FOREIGN KEY (ctf_id) REFERENCES ctfs,
+  CONSTRAINT constraint_organizer FOREIGN KEY (organizer_id) REFERENCES users
 );
 
--- Events
--- Teams
--- Challenges (Describe the Challenges)
--- Hints
--- Participations (Instance of the Team in the Challenge)
--- Containers (Actual instances of the Challenges)
--- Notifications (Persistent)
--- Messages (Chatroom)
--- Files (Attachments, Containerfiles...)
--- Reports (Bugs, Feature Requests...)
+CREATE TABLE IF NOT EXISTS teams (
+  id              SERIAL PRIMARY KEY,
 
+  profile_id      INTEGER,
+  CONSTRAINT constraint_profile FOREIGN KEY (profile_id) REFERENCES profiles
+);
+CREATE TABLE IF NOT EXISTS team_members (
+  team_id    INTEGER NOT NULL,
+  member_id  VARCHAR(64) NOT NULL,
+  PRIMARY KEY (team_id, member_id),
+
+  CONSTRAINT constraint_team FOREIGN KEY (team_id) REFERENCES teams,
+  CONSTRAINT constraint_member FOREIGN KEY (member_id) REFERENCES users
+);
+
+CREATE TABLE IF NOT EXISTS attachements (
+  id        SERIAL PRIMARY KEY,
+  contents  JSON NOT NULL
+);
+
+-- NOTE: Recipes of the challenges
+CREATE TABLE IF NOT EXISTS challenges (
+  id                  SERIAL PRIMARY KEY,
+  name                TEXT DEFAULT 'Unnamed challenge' NOT NULL,
+  description         TEXT DEFAULT 'No description'    NOT NULL,
+
+  reward              INTEGER DEFAULT 500  NOT NULL,
+  reward_min          INTEGER DEFAULT 350  NOT NULL,
+  reward_first_blood  INTEGER DEFAULT 0    NOT NULL,
+  reward_decrements   BOOLEAN DEFAULT TRUE NOT NULL,
+
+  CONSTRAINT constraint_reward_min CHECK (reward_min >= 0),
+  CONSTRAINT constraint_reward CHECK (reward >= reward_min)
+);
+CREATE TABLE IF NOT EXISTS challenges_attachements (
+  challenge_id    INTEGER NOT NULL,
+  attachement_id  INTEGER NOT NULL,
+  PRIMARY KEY (challenge_id, attachement_id),
+
+  name            TEXT NULL,
+  -- locked          BOOLEAN DEFAULT FALSE,
+
+  CONSTRAINT constraint_challenge FOREIGN KEY (challenge_id) REFERENCES challenges,
+  CONSTRAINT constraint_attachement FOREIGN KEY (attachement_id) REFERENCES attachements
+);
+CREATE TABLE IF NOT EXISTS ctfs_challenges (
+  ctf_id      INTEGER NOT NULL,
+  challenge_id  INTEGER NOT NULL,
+
+  CONSTRAINT constraint_ctf FOREIGN KEY (ctf_id) REFERENCES ctfs,
+  CONSTRAINT constraint_challenge FOREIGN KEY (challenge_id) REFERENCES challenges
+);
+
+CREATE TABLE IF NOT EXISTS hints (
+  id            SERIAL PRIMARY KEY,
+  challenge_id  INTEGER NOT NULL,
+  penalty       INTEGER DEFAULT 0 NOT NULL,
+  contents      TEXT NOT NULL,
+
+  CONSTRAINT constraint_challenge FOREIGN KEY (challenge_id) REFERENCES challenges
+);
+
+-- Participations (Instance of the Team in the Challenge)
+CREATE TABLE IF NOT EXISTS participations (
+  id              SERIAL PRIMARY KEY,
+  score           INTEGER DEFAULT 0 NOT NULL,
+
+  team_id         INTEGER NOT NULL,
+  challenge_id    INTEGER NOT NULL,
+
+  CONSTRAINT constraint_team FOREIGN KEY (team_id) REFERENCES teams,
+  CONSTRAINT constraint_challenge FOREIGN KEY (challenge_id) REFERENCES challenges
+);
+
+-- Containers (Actual instances of the Challenges)
+CREATE TABLE IF NOT EXISTS containers (
+  id              SERIAL PRIMARY KEY
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id          SERIAL PRIMARY KEY,
+
+  contents    JSON NOT NULL,
+  created_at  TIMESTAMP DEFAULT now() NOT NULL
+);
+CREATE TABLE IF NOT EXISTS notification_users (
+  notification_id  INTEGER NOT NULL,
+  notified_id      VARCHAR(64) NOT NULL,
+  PRIMARY KEY (notification_id, notified_id),
+
+  CONSTRAINT constraint_notified FOREIGN KEY (notified_id) REFERENCES users,
+  CONSTRAINT constraint_notification  FOREIGN KEY (notification_id) REFERENCES notifications
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id           SERIAL,
+  chatroom_id  INTEGER NOT NULL,
+  PRIMARY KEY (id, chatroom_id),
+
+  contents     TEXT NOT NULL,
+  sent_at      TIMESTAMP DEFAULT now() NOT NULL,
+  writer_id    VARCHAR(64), -- NOTE: NULL means System message
+
+  CONSTRAINT constraint_writer FOREIGN KEY (writer_id) REFERENCES users,
+  CONSTRAINT constraint_chatroom FOREIGN KEY (chatroom_id) REFERENCES ctfs
+);
+
+-- NOTE: Bugs, Feature Requests
+CREATE TABLE IF NOT EXISTS reports (
+  id         SERIAL PRIMARY KEY,
+  done       BOOLEAN DEFAULT FALSE NOT NULL,
+  contents   TEXT NOT NULL,
+  issued_at  TIMESTAMP DEFAULT now() NOT NULL,
+  issuer_id  VARCHAR(64) DEFAULT NULL,
+
+  CONSTRAINT constraint_issuer FOREIGN KEY (issuer_id) REFERENCES users
+);
+
+-- TODO: Files (Attachments, Containerfiles...)
