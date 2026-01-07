@@ -55,6 +55,7 @@ func (app *App) Init() error {
 	}
 
 	app.server = fiber.New() // TODO(xenobas): Replace logging with our own solution
+	app.server.RegisterCustomConstraint(&Constraint_Identifier{})
 	app.server.Use(Middleware_Authorization)
 
 	return nil

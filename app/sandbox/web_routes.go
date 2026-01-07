@@ -27,13 +27,14 @@ func Route_List(app *App) Route {
 
 func Route_Init(app *App) Route {
 	// TODO(xenobas): pattern :name should pass through a constraint that only passes the validator [a-z_]+
-	pattern := "/api/sandbox/:name/init"
+	pattern := "/api/sandbox/:name<identifier>/init"
 
 	methods := []string{fiber.MethodPost}
 	handler := func(c fiber.Ctx) error {
 		c.Accepts("multipart/form-data")
 
-		archiveName := filepath.Base(strings.TrimSpace(c.Params("name")))
+		queryName := strings.TrimSpace(c.Params("name"))
+		archiveName := filepath.Base(queryName)
 		if archiveName == "." || archiveName == ".." {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid \"name\""})
 		}
@@ -42,6 +43,7 @@ func Route_Init(app *App) Route {
 		if _, err := os.Stat(archivePath); !os.IsNotExist(err) {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": fmt.Sprintf("Image \"%s\" already exists", archiveName)})
 		}
+
 		if err := os.MkdirAll(archivePath, 0750); err != nil {
 			log.Printf("Could not create image directory: %v", err)
 			return c.SendStatus(fiber.StatusInternalServerError)
@@ -61,7 +63,7 @@ func Route_Init(app *App) Route {
 
 		archiveTar := tar.NewReader(archiveFile)
 		archiveContents, err := Archive_Extract(archiveTar, archivePath)
-		if err != nil { // TODO(xenobas): Delete lingering files, setup timer for build command otherwise delete
+		if err != nil { // TODO(xenobas): Delete lingering files, setup cron timeout for build command otherwise delete
 			return c.SendStatus(fiber.StatusBadRequest)
 		}
 
@@ -72,29 +74,28 @@ func Route_Init(app *App) Route {
 }
 
 func Route_Build(app *App) Route {
-	pattern := "/api/sandbox/:name/build"
-	methods := []string{ fiber.MethodPost }
-	handler := func (c fiber.Ctx) error {
+	pattern := "/api/sandbox/:name<identifier>/build"
+	methods := []string{fiber.MethodPost}
+	handler := func(c fiber.Ctx) error {
 		imageName := filepath.Base(strings.TrimSpace(c.Params("name", "")))
 		if imageName == "" || imageName == "." || imageName == ".." {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{ "error": "Invalid \"name\" parameter" })
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid \"name\" parameter"})
 		}
-		imagePath := filepath.Join(app.imagesDir, imageName)
 
+		imagePath := filepath.Join(app.imagesDir, imageName)
 		if _, err := os.Stat(imagePath); os.IsNotExist(err) {
 			return c.SendStatus(fiber.StatusNotFound)
 		}
 
-		buildOptions := BuildOptions{
-			ContainerFiles: []string{ filepath.Join(imagePath, "Containerfile") },
-			ContextDirectory: imagePath,
-			Name: imageName,
-			Tags: []string{ },
-		}
+		var buildOptions BuildOptions
+		buildOptions.ContainerFiles = []string{filepath.Join(imagePath, "Containerfile")}
+		buildOptions.ContextDirectory = imagePath
+		buildOptions.Name = imageName
+
 		image, err := Podman_Build(app.podman, buildOptions)
 		if err != nil {
 			log.Printf("Could not build image at \"%s\": %v", imagePath, err)
-			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{ "error": fmt.Sprintf("%s", err) })
+			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": fmt.Sprintf("%s", err)})
 		}
 
 		return c.Status(fiber.StatusCreated).JSON(*image)
